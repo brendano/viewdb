@@ -1,7 +1,7 @@
 """
-get a 1000-foot view of a big ol' pile of data.
-Intended for when someone gives you a SQL dump and you're trying to figure out what's what.
-Should show the schema & high-level summary statistics.
+Get a 1000-foot view of a big ol' pile of data.
+Intended for when someone gives you an SQL dump and you're trying to figure out what's what.
+Should show the schema, examples, and summary statistics.
 """
 
 import util; util.fix_stdio()
