@@ -7,7 +7,11 @@ Should show the schema, examples, and summary statistics.
 import util; util.fix_stdio()
 import sys
 import sqlalchemy
-db = sqlalchemy.create_engine('mysql://root@localhost/%s' % sys.argv[1])
+#db = sqlalchemy.create_engine('mysql://root@localhost/%s' % sys.argv[1])
+if len(sys.argv) < 2:
+  print>>sys.stderr, "Need DB schema as argument.  e.g. mysql://root@localhost/wordpress"
+  sys.exit(1)
+db = sqlalchemy.create_engine(sys.argv[1])
 meta = sqlalchemy.MetaData(db, reflect=True)
 table_names = meta.tables.keys()
 table_names.sort()
@@ -29,7 +33,7 @@ def mean(x,y):
 def truncate_at(s, max=40):
   s = util.unicodify(s)
   if len(s) > max:
-    s = s[:max] + " [...]"
+    s = s[:max] + "&hellip;"
   return s
 
 output("""<style>
@@ -61,13 +65,23 @@ for table_name in table_names:
   output("%s rows" % groupThousands(N))
   
   tn = table_name
-  min_id = db.execute("select min(id) from %s" % tn).fetchone()[0]
-  max_id = db.execute("select max(id) from %s" % tn).fetchone()[0]
-  sample_sqls = [
-    "select * from %s where id = %s" % (tn, min_id),
-    "select * from %s where id >= %s and id <= %s limit 1" % (tn, mean(min_id,max_id)-5, mean(min_id,max_id)+5),
-    "select * from %s where id = %s" % (tn, max_id),
-  ]
+  if N==0:
+    sample_sqls = []
+  elif db.url.drivername == 'mysql':
+    ## can use LIMIT and OFFSETs
+    sample_sqls = ["select * from %s limit 1" % tn]
+    if N>1: sample_sqls += ["select * from %s limit 1 offset %d" % (tn, N-1) ]
+    if N>2: sample_sqls[1:1] = ["select * from %s limit 1 offset %d" % (tn, int(N/2)) ]
+  elif 'id' not in table.columns.keys():
+    sample_sqls = []
+  else:
+    min_id = db.execute("select min(id) from %s" % tn).fetchone()[0]
+    max_id = db.execute("select max(id) from %s" % tn).fetchone()[0]
+    sample_sqls = ["select * from %s where id=%d" % (tn, min_id)]
+    if N>1: sample_sqls += ["select * from %s where id=%d" % (tn, max_id)]
+    middle = int(mean(min_id,max_id))
+    if N>2: sample_sqls[1:1] = ["select * from %s where id>=%s order by id limit 1" % (tn,middle)]
+  
   sample_rows = [db.execute(q).fetchone() for q in sample_sqls]
   
   output("<table cellspacing=0 cellpadding=1 border=1>")
@@ -75,6 +89,9 @@ for table_name in table_names:
   for colname in table.columns.keys():
     output("<tr><td><b>%s</b>" % colname)
     for row in sample_rows:
+      if row is None:
+        output("<td>")
+        continue
       val = row[colname]
       if val is None: s = ""
       else: s = truncate_at(val)
